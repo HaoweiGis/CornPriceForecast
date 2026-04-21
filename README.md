@@ -121,7 +121,6 @@ CornPriceForecast/
 ## Step 3: Model Training & Evaluation
 
 **Scripts**:
-- `03_model_training_and_evaluation.py` (original)
 - `03_model_training_and_evaluation_ad3way.py` (three-way Meta version)
 
 **Model List**:

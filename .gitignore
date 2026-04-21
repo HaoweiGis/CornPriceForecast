@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Machine Learning / Model outputs
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+
+# CatBoost
+catboost_info/
+
+# Results and visualizations
+ablation/FinallyVisual/*.zip
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Excel and CSV outputs
+*.xlsx
+*.xls
+
+# Logs
+*.log
+screenlog.*
+
+# Compressed files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# Data files (if large)
+# raw_data_daily.csv
+
+# Project directories to ignore
+skills/
+0_visualcode/
+ablation/
+
+# Backup files
+*_bk.py
+*_backup.py
+
+

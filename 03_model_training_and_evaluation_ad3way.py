@@ -86,7 +86,7 @@ warnings.filterwarnings("ignore")
 logging.getLogger('cmdstanpy').disabled = True
 
 # ─── 路径 ─────────────────────────────────────────────────────
-BASE_DIR = r'/data/pricePre/1_2026NWAFU/ablation'
+BASE_DIR = os.path.join(SCRIPT_DIR, 'ablation')
 SHAP_DIR = os.path.join(BASE_DIR, 'shap_results')
 EVAL_DIR = os.path.join(BASE_DIR, 'evaluation_results')
 os.makedirs(EVAL_DIR, exist_ok=True)

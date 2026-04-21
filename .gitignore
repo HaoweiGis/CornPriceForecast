@@ -53,7 +53,6 @@ ablation/FinallyVisual/*.zip
 
 # Logs
 *.log
-screenlog.*
 
 # Compressed files
 *.zip
@@ -68,6 +67,7 @@ screenlog.*
 skills/
 0_visualcode/
 ablation/
+backup/
 
 # Backup files
 *_bk.py

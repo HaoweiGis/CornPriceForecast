@@ -1,5 +1,3 @@
-# 文件名：02_shap_variable_selection_optimized.py
-
 import os
 import json
 import logging
@@ -8,9 +6,6 @@ import numpy as np
 import pandas as pd
 import joblib
 
-# ------------------------------------------------------------------
-# shap / numpy 兼容补丁（为老版本 shap 兼容 numpy 2.x 做兜底）
-# ------------------------------------------------------------------
 if not hasattr(np, 'obj2sctype'):
     np.obj2sctype = lambda obj: np.dtype(obj).type
 
@@ -22,42 +17,20 @@ warnings.filterwarnings("ignore")
 logging.getLogger('prophet').setLevel(logging.WARNING)
 logging.getLogger('cmdstanpy').disabled = True
 
-# =========================================================
-# 1. 路径配置
-# =========================================================
-BASE_DIR = r'/data/pricePre/1_2026NWAFU/ablation'
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.join(SCRIPT_DIR, 'ablation')
 SHAP_DIR = os.path.join(BASE_DIR, 'shap_results')
 os.makedirs(SHAP_DIR, exist_ok=True)
 
-# =========================================================
-# 2. 参数配置
-# =========================================================
-# -----------------------------
-# Horizon 设置
-# -----------------------------
-# 默认使用“有间隔含义”的 horizon
-# H_LIST = [1, 5, 10, 22, 44, 66, 126]
-
-# 【保留逐日计算选项】如果后续你想逐天扫描，把上面注释掉，启用下面一行：
-# [用户调整] 扫描 h=1~30，覆盖有效预测区+过渡区；json.dump 需要 list 而非 range
 H_LIST = list(range(1, 31))
 
-# -----------------------------
-# SHAP 累积重要性截断
-# -----------------------------
 CUM_IMPORTANCE_THRESHOLD = 0.85
 MIN_FEATURES = 5
 MAX_FEATURES = 40
 
-# -----------------------------
-# 训练池：绝不碰未来测试区间
-# -----------------------------
 TRAIN_START = '2020-05-15'
-TRAIN_END = '2022-12-31'  # 扩展后的训练池上限；与 TEST_START='2023-01-01' 严格隔离
+TRAIN_END = '2022-12-31'
 
-# -----------------------------
-# Expanding-window folds
-# -----------------------------
 FOLDS_CONFIG = [
     (0.60, 0.70),
     (0.70, 0.80),
@@ -67,9 +40,6 @@ FOLDS_CONFIG = [
 MIN_TRAIN_SAMPLES = 80
 MIN_EXPLAIN_SAMPLES = 20
 
-# -----------------------------
-# LightGBM 参数
-# -----------------------------
 LGB_PARAMS_1 = {
     'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 6,
     'num_leaves': 31, 'subsample': 0.8, 'colsample_bytree': 0.8,
@@ -83,9 +53,6 @@ LGB_PARAMS_2 = {
 }
 
 
-# =========================================================
-# 3. 工具函数
-# =========================================================
 def get_feature_group(feat_name: str) -> str:
     if '_D_' in feat_name: return 'Daily'
     elif '_W_' in feat_name: return 'Weekly'
@@ -103,7 +70,9 @@ def save_json(obj, path: str):
         json.dump(obj, f, indent=4, ensure_ascii=False, default=_default)
 
 def filter_finite_xy(X: pd.DataFrame, y: np.ndarray):
-    """同时过滤 X 或 y 中的非有限值 (NaN/Inf)"""
+    """
+    Filter both X and y for non-finite values (NaN/Inf).
+    """
     x_finite_mask = np.isfinite(X.values).all(axis=1)
     y_finite_mask = np.isfinite(y)
     mask = x_finite_mask & y_finite_mask
@@ -111,12 +80,13 @@ def filter_finite_xy(X: pd.DataFrame, y: np.ndarray):
 
 def get_prophet_baseline(dates: pd.DatetimeIndex, y_ret: np.ndarray, train_end_idx: int, prophet_cache: dict):
     """
-    带缓存机制的 Prophet 拟合：
-    如果相同 train_end_idx 已经拟合过，直接返回。极大加速多 Horizon 场景。
+    Prophet fitting with caching mechanism:
+    If same train_end_idx has been fitted before, return directly.
+    Greatly accelerates multi-horizon scenarios.
     """
     if train_end_idx in prophet_cache:
         return prophet_cache[train_end_idx]
-    
+
     df_train = pd.DataFrame({
         'ds': dates[:train_end_idx],
         'y': y_ret[:train_end_idx]
@@ -125,28 +95,23 @@ def get_prophet_baseline(dates: pd.DatetimeIndex, y_ret: np.ndarray, train_end_i
     model = Prophet(yearly_seasonality=True, weekly_seasonality=False, daily_seasonality=False)
     model.fit(df_train)
 
-    # 统一预测至 dates 全长，后续再按 expl_end_idx 截取，保证只需 predict 一次
     df_pred = pd.DataFrame({'ds': dates})
     yhat_all = model.predict(df_pred)['yhat'].values
-    
+
     prophet_cache[train_end_idx] = (yhat_all, model)
     return yhat_all, model
 
 def build_fold_residuals(dates: pd.DatetimeIndex, y_ret: np.ndarray, train_end_idx: int, expl_end_idx: int, h: int, prophet_cache: dict):
     """
-    使用向量化计算累积收益和残差，取代低效的 for 循环。
+    Vectorized computation of cumulative returns and residuals, replacing inefficient for-loops.
     """
-    # 1. 获取 Prophet 全量预测值 (从缓存或现算)
     yhat_all, prophet_model = get_prophet_baseline(dates, y_ret, train_end_idx, prophet_cache)
 
-    # 2. 向量化计算 target 累积: y_target[i] = sum(y[i+1 : i+1+h])
-    # pd.Series.rolling.sum 默认遇到 window 内有 NaN 时结果为 NaN，完美契合你的原始逻辑
     y_target = pd.Series(y_ret).rolling(window=h).sum().shift(-h).values
     p_target = pd.Series(yhat_all).rolling(window=h).sum().shift(-h).values
 
     residual_all = y_target - p_target
 
-    # 3. 按照 Fold 截断
     res_train = residual_all[:train_end_idx]
     res_expl = residual_all[train_end_idx:expl_end_idx]
 
@@ -169,11 +134,8 @@ def compute_iou(list_a, list_b) -> float:
     return len(set_a & set_b) / len(union) if len(union) > 0 else 0.0
 
 
-# =========================================================
-# 4. 主程序
-# =========================================================
 def main():
-    print("1. 正在加载 01 导出的目标与特征矩阵...")
+    print("1. Loading target and feature matrix exported from 01...")
 
     df_ret = safe_read_csv(os.path.join(BASE_DIR, 'target_y_ret.csv'))
     f_base = safe_read_csv(os.path.join(BASE_DIR, 'base_features.csv'))
@@ -181,7 +143,6 @@ def main():
     f_weekly = safe_read_csv(os.path.join(BASE_DIR, 'weekly_midas.csv'))
     f_monthly = safe_read_csv(os.path.join(BASE_DIR, 'monthly_midas.csv'))
 
-    # 对齐索引
     common_index = df_ret.index
     for _df in [f_base, f_daily, f_weekly, f_monthly]:
         common_index = common_index.intersection(_df.index)
@@ -196,7 +157,6 @@ def main():
     dates = df_ret.index
     y_ret_arr = df_ret.iloc[:, 0].values.astype(float)
 
-    # 锁定训练池
     train_mask = (dates >= pd.Timestamp(TRAIN_START)) & (dates <= pd.Timestamp(TRAIN_END))
     X_train_pool = X_all.loc[train_mask].copy()
     y_train_pool = y_ret_arr[train_mask]
@@ -204,18 +164,17 @@ def main():
     n_pool = len(dates_pool)
 
     if n_pool == 0:
-        raise ValueError("训练池为空，请检查 TRAIN_START / TRAIN_END。")
+        raise ValueError("Training pool is empty, please check TRAIN_START / TRAIN_END.")
 
-    print(f"\n2. 锁定训练池 (沙盒): {dates_pool.min().date()} ~ {dates_pool.max().date()} ({n_pool} 样本)")
+    print(f"\n2. Locking training pool (sandbox): {dates_pool.min().date()} ~ {dates_pool.max().date()} ({n_pool} samples)")
 
     optimal_features_dict = {}
     freq_contribution_list = []
     horizon_audit_list = []
-    
-    # 🎯 全局 Prophet 模型缓存池，避免多 Horizon 重复拟合
+
     prophet_cache = {}
 
-    print(f"\n3. 🚀 启动 Expanding-Window 多折 SHAP 稳定性选秀 (共扫描 {len(H_LIST)} 个 Horizon，h=1~{max(H_LIST)})...")
+    print(f"\n3. Starting Expanding-Window multi-fold SHAP stability selection (scanning {len(H_LIST)} horizons, h=1~{max(H_LIST)})...")
 
     for h in H_LIST:
         print(f"\n{'=' * 20} Horizon h = {h} {'=' * 20}")
@@ -228,13 +187,12 @@ def main():
             expl_end_idx = int(n_pool * expl_pct)
 
             if expl_end_idx <= train_end_idx:
-                print(f"   [Fold {fold_idx}] Explain 区间为空，跳过。")
+                print(f"   [Fold {fold_idx}] Explain interval is empty, skip.")
                 continue
 
-            # 使用带有缓存和向量化优化的残差计算
             res_train, res_expl, prophet_model = build_fold_residuals(
-                dates=dates_pool, y_ret=y_train_pool, 
-                train_end_idx=train_end_idx, expl_end_idx=expl_end_idx, 
+                dates=dates_pool, y_ret=y_train_pool,
+                train_end_idx=train_end_idx, expl_end_idx=expl_end_idx,
                 h=h, prophet_cache=prophet_cache
             )
 
@@ -245,10 +203,9 @@ def main():
             X_ex_clean, y_ex_clean, _ = filter_finite_xy(X_expl_fold, res_expl)
 
             if len(X_tr_clean) < MIN_TRAIN_SAMPLES or len(X_ex_clean) < MIN_EXPLAIN_SAMPLES:
-                print(f"   [Fold {fold_idx}] 警告：有效样本不足 (Train={len(X_tr_clean)}, Expl={len(X_ex_clean)})，跳过本折。")
+                print(f"   [Fold {fold_idx}] Warning: insufficient valid samples (Train={len(X_tr_clean)}, Expl={len(X_ex_clean)}), skip this fold.")
                 continue
 
-            # 主探针模型
             probe_1 = lgb.LGBMRegressor(**LGB_PARAMS_1)
             probe_1.fit(X_tr_clean, y_tr_clean)
 
@@ -276,9 +233,8 @@ def main():
                 'ExplainSamples': len(X_ex_clean), 'Selected_K': k_fold_1
             })
 
-            print(f"   [Fold {fold_idx}] Train: {len(X_tr_clean)} | Explain: {len(X_ex_clean)} -> 选中 {k_fold_1} 个特征")
+            print(f"   [Fold {fold_idx}] Train: {len(X_tr_clean)} | Explain: {len(X_ex_clean)} -> Selected {k_fold_1} features")
 
-            # 敏感性检查：只在最后一个成功 fold 上做第二套参数
             if fold_idx == len(FOLDS_CONFIG):
                 probe_2 = lgb.LGBMRegressor(**LGB_PARAMS_2)
                 probe_2.fit(X_tr_clean, y_tr_clean)
@@ -294,15 +250,12 @@ def main():
                 top_feats_fold_2 = df_fold_2.head(k_fold_2)['Feature'].tolist()
 
                 sensitivity_iou = compute_iou(top_feats_fold_1, top_feats_fold_2)
-                print(f"   [Sensitivity Check] 两套参数下 Top 特征重合率 (IoU): {sensitivity_iou:.2%}")
+                print(f"   [Sensitivity Check] Top feature overlap rate (IoU) under two parameter sets: {sensitivity_iou:.2%}")
 
         if not fold_results:
-            print(f"   ❌ h={h} 没有任何 Fold 成功，跳过。")
+            print(f"   [ERROR] h={h} has no successful Fold, skip.")
             continue
 
-        # -------------------------------------------------
-        # 多折 SHAP 平均与聚合
-        # -------------------------------------------------
         avg_shap = np.mean([fr['SHAP'] for fr in fold_results], axis=0)
         df_agg = pd.DataFrame({
             'Feature': X_train_pool.columns, 'Avg_SHAP': avg_shap,
@@ -310,14 +263,13 @@ def main():
         }).sort_values('Avg_SHAP', ascending=False).reset_index(drop=True)
 
         final_k = choose_k_by_cum_importance(
-            df_agg.rename(columns={'Avg_SHAP': 'Importance'}), 
+            df_agg.rename(columns={'Avg_SHAP': 'Importance'}),
             CUM_IMPORTANCE_THRESHOLD, MIN_FEATURES, MAX_FEATURES
         )
 
         final_top_features = df_agg.head(final_k)['Feature'].tolist()
         optimal_features_dict[str(h)] = final_top_features
 
-        # 稳定性统计
         fold_cols = []
         for fr in fold_results:
             col_name = f"Fold{fr['Fold']}_Top"
@@ -330,7 +282,6 @@ def main():
         total_avg_shap = df_agg['Avg_SHAP'].sum()
         df_agg['Cum_SHAP'] = df_agg['Avg_SHAP'].cumsum() / total_avg_shap if total_avg_shap > 0 else 0.0
 
-        # 保存结果
         df_agg.to_csv(os.path.join(SHAP_DIR, f'feature_selection_stability_h{h}.csv'), index=False)
         df_agg.head(final_k).to_csv(os.path.join(SHAP_DIR, f'top_k_features_h{h}.csv'), index=False)
         df_agg[['Feature', 'Group', 'Avg_SHAP', 'Cum_SHAP', 'Selection_Count', 'Selection_Rate']].to_csv(
@@ -341,7 +292,6 @@ def main():
         joblib.dump(last_successful['ProbeModel'], os.path.join(SHAP_DIR, f'probe_model_h{h}.pkl'))
         joblib.dump(last_successful['ProphetModel'], os.path.join(SHAP_DIR, f'prophet_model_h{h}.pkl'))
 
-        # 记录频域结构
         top_df = df_agg.head(final_k)
         total_top_imp = top_df['Avg_SHAP'].sum()
         group_sum = (top_df.groupby('Group')['Avg_SHAP'].sum() / total_top_imp * 100) if total_top_imp > 0 else pd.Series(dtype=float)
@@ -359,14 +309,11 @@ def main():
             horizon_audit_list.append(row)
 
         print(
-            f"   🏆 综合 Averaged SHAP：最终选中 {final_k} 个特征 | "
+            f"   [Result] Aggregated SHAP: Final selected {final_k} features | "
             f"D={freq_row['Daily_%']:.1f}% W={freq_row['Weekly_%']:.1f}% M={freq_row['Monthly_%']:.1f}%"
         )
 
-    # =====================================================
-    # 5. 保存结果
-    # =====================================================
-    print("\n4. 正在保存所有稳定性审计表与配置...")
+    print("\n4. Saving all stability audit tables and configurations...")
     save_json(optimal_features_dict, os.path.join(SHAP_DIR, 'optimal_features_dict.json'))
     pd.DataFrame(freq_contribution_list).to_csv(os.path.join(SHAP_DIR, 'shap_frequency_contribution.csv'), index=False)
     pd.DataFrame(horizon_audit_list).to_csv(os.path.join(SHAP_DIR, 'shap_horizon_audit.csv'), index=False)
@@ -380,7 +327,7 @@ def main():
     }
     save_json(config_dict, os.path.join(SHAP_DIR, 'shap_run_config.json'))
 
-    print(f"\n✅ 扩展窗口多折 SHAP 稳定性选秀完成！文件已保存至: {SHAP_DIR}")
+    print(f"\n[Done] Expanding-window multi-fold SHAP stability selection completed! Files saved to: {SHAP_DIR}")
 
 if __name__ == "__main__":
     main()

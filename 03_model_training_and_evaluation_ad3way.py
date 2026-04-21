@@ -1,28 +1,3 @@
-# 文件名：03_model_training_and_evaluation_ad3way.py
-# 版本：v2_ad3way
-#
-# 本版本新增/改动（相对原 03_model_training_and_evaluation.py）：
-#   [兼容] 不修改原脚本；沿用原服务器路径与原数据读取逻辑
-#   [输出] 结果另存为 Final_ShortHorizon_v2_ad3way.xlsx，避免覆盖原结果
-#   [输出] TabPFN-SHAP 改为带 ad3way 后缀文件名，避免覆盖原文件
-#   [机制] Step_Records 额外保存 Meta_3Way 的逐步 SHAP：
-#          meta3_shap_ar / meta3_shap_tab / meta3_shap_et
-#          meta3_shap_v10 / meta3_shap_vr / meta3_shap_slh
-#   [兼容] 同时保留原 meta_shap_* 字段，继续对应二路 Meta（Meta_AR_TabPFN）
-#
-# 原版本新增/改动（相对上一版）：
-#   [模型] 新增 ExtraTreesRegressor、CatBoostRegressor；开启 XGB
-#   [模型] 新增 Meta_3Way：AR + TabPFN + ExtraTrees 三路 Meta-Learner
-#   [速度] MAX_TRAIN_SIZE 统一提升至 1500（释放 TabPFN in-context 学习能力）
-#   [速度] N_ensemble_configurations 从 32 降至 16（甜点值）
-#   [速度] Meta-Learner 重训频率与 refit_step 同步，避免每步都重训
-#   [精度] DA 计算修正：sign(y)*sign(p)>0，零值不计入统计
-#   [精度] Profit_Factor 加 clip(100) 防止极端值
-#   [机制] 新增 step_records 保存每步：日期/真实值/各模型预测/市场状态特征
-#   [机制] Meta-Learner 每步做 TreeExplainer SHAP，保存 5 维 SHAP 序列
-#   [机制] TabPFN-SHAP 关键子集（低/高波动各 50 步），PermutationExplainer
-#   [导出] Excel 增加第五 sheet：Step_Records（用于论文机制分析）
-
 # ═══════════════════════════════════════════════════════════════
 # 模型开关（True=运行，False=跳过）
 # ═══════════════════════════════════════════════════════════════

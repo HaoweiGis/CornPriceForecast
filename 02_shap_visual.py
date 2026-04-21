@@ -21,8 +21,6 @@ import shap
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 PREFERRED_RESULTS_DIRS = [
     os.path.join(ROOT_DIR, "ablation", "shap_results"),
-    os.path.join(ROOT_DIR, "ablation0331", "shap_results"),
-    os.path.join(ROOT_DIR, "ablationV1", "shap_results"),
 ]
 
 DEEP_HORIZONS = [1, 5, 20, 63, 126]

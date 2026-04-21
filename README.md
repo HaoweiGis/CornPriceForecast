@@ -8,7 +8,6 @@ A short-term forecasting system based on multi-frequency MIDAS feature engineeri
 CornPriceForecast/
 ├── 01_feature_engineering.py              # Feature engineering
 ├── 02_shap_variable_selection.py          # SHAP feature selection
-├── 03_model_training_and_evaluation.py   # Model training & evaluation (original)
 ├── 03_model_training_and_evaluation_ad3way.py  # Three-way Meta-Learner version
 ├── raw_data_daily.csv                     # Raw input data
 └── ablation/                             # Output directory
@@ -29,8 +28,7 @@ CornPriceForecast/
         ↓
 02_shap_variable_selection.py
         ↓
-03_model_training_and_evaluation.py
-   or 03_model_training_and_evaluation_ad3way.py
+03_model_training_and_evaluation_ad3way.py
 ```
 
 ## Input Data Format

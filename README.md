@@ -47,7 +47,6 @@ CornPriceForecast/
 | **Daily Features** | `BDI`, `CBOTcorn`, `CornFV`, `CornFOI`, `CornFP`, `BranPrc`, `Brent`, `CassCFR`, `CSPrc`, `DDGSPrc`, `CornCIF`, `CornBasis`, `SoyPrc`, `WheatPrc` | Shipping, futures, feed, etc. |
 | **Weekly Features** | `CFETS`, `CornDSInv`, `CornDSCons`, `CSUR`, `HogPrc`, `CornPortInv`, `EthUR`, `BroilerPrc` | Exchange rate, inventory, livestock prices |
 | **Monthly Features** | `ONI`, `CornProd`, `CPI`, `CEI`, `GPRc`, `CornImp` | Macro, supply-demand, imports |
-| **Other** | `BaiduEpiIdx` | Baidu epidemic index (optional) |
 
 **Time Range**: 2017-01-01 to present
 
